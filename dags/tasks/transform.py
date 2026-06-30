@@ -26,33 +26,29 @@ def to_decimal(value, default=None):
         return default
 
 
-def transform_electricity(date_str: str):
+def transform_electricity(dt_str: str):
     """
     raw.electricity → staging.electricity
-    1일 1행(wide) → 23행(long) 피벗
-    1시~23시만 사용 (날씨 데이터가 23시까지라 24시 제외)
+    KPX 실시간 API: currPwrTot(현재수요) 추출 → 1건 저장
+    dt_str: "YYYY-MM-DD HH:00:00"
     """
     raw_conn = get_conn("etl_raw")
     try:
         with raw_conn.cursor() as cur:
-            cur.execute("SELECT raw_json FROM electricity WHERE date = %s", (date_str,))
+            cur.execute(
+                "SELECT raw_json FROM electricity WHERE observed_at = %s",
+                (dt_str,)
+            )
             row = cur.fetchone()
     finally:
         raw_conn.close()
 
     if row is None:
-        print(f"[transform_electricity] {date_str} raw 데이터 없음")
+        print(f"[transform_electricity] {dt_str} raw 데이터 없음")
         return
 
-    data = json.loads(row[0])
-
-    rows = []
-    for h in range(1, 24):  # 1시~23시
-        col = f"{h}시"
-        if col not in data:
-            continue
-        dt = datetime.strptime(f"{date_str} {h:02d}:00:00", "%Y-%m-%d %H:%M:%S")
-        rows.append((dt, int(data[col])))
+    data      = json.loads(row[0])
+    demand_mw = int(float(data.get("currPwrTot", 0)))
 
     stg_conn = get_conn("etl_staging")
     try:
@@ -62,46 +58,37 @@ def transform_electricity(date_str: str):
                 VALUES (%s, %s)
                 ON DUPLICATE KEY UPDATE demand_mw = VALUES(demand_mw)
             """
-            cur.executemany(sql, rows)
+            cur.execute(sql, (dt_str, demand_mw))
         stg_conn.commit()
-        print(f"[transform_electricity] {date_str} {len(rows)}건 저장 완료")
+        print(f"[transform_electricity] {dt_str} demand_mw={demand_mw} 저장 완료")
     finally:
         stg_conn.close()
 
 
-def transform_weather(date_str: str):
+def transform_weather(dt_str: str):
     """
     raw.weather → staging.weather
-    - JSON에서 기온·습도·풍속·강수량만 추출
-    - 빈 문자열 → None(NULL), 강수량 빈 값 → 0.0
+    특정 시각 1건: 기온·습도·풍속·강수량 추출
+    dt_str: "YYYY-MM-DD HH:00:00"
     """
     raw_conn = get_conn("etl_raw")
     try:
         with raw_conn.cursor() as cur:
             cur.execute(
                 "SELECT observed_at, station_id, raw_json FROM weather "
-                "WHERE DATE(observed_at) = %s",
-                (date_str,)
+                "WHERE observed_at = %s",
+                (dt_str,)
             )
-            rows = cur.fetchall()
+            row = cur.fetchone()
     finally:
         raw_conn.close()
 
-    if not rows:
-        print(f"[transform_weather] {date_str} raw 데이터 없음")
+    if row is None:
+        print(f"[transform_weather] {dt_str} raw 데이터 없음")
         return
 
-    staging_rows = []
-    for observed_at, station_id, raw_json in rows:
-        r = json.loads(raw_json)
-        staging_rows.append((
-            observed_at,
-            station_id,
-            to_decimal(r.get("ta")),       # 기온(°C)
-            to_decimal(r.get("hm")),       # 습도(%)
-            to_decimal(r.get("ws")),       # 풍속(m/s)
-            to_decimal(r.get("rn"), 0.0),  # 강수량(mm) — 비 없으면 0.0
-        ))
+    observed_at, station_id, raw_json = row
+    r = json.loads(raw_json)
 
     stg_conn = get_conn("etl_staging")
     try:
@@ -115,18 +102,26 @@ def transform_weather(date_str: str):
                     wind_speed    = VALUES(wind_speed),
                     precipitation = VALUES(precipitation)
             """
-            cur.executemany(sql, staging_rows)
+            cur.execute(sql, (
+                observed_at,
+                station_id,
+                to_decimal(r.get("ta")),
+                to_decimal(r.get("hm")),
+                to_decimal(r.get("ws")),
+                to_decimal(r.get("rn"), 0.0),
+            ))
         stg_conn.commit()
-        print(f"[transform_weather] {date_str} {len(staging_rows)}건 저장 완료")
+        print(f"[transform_weather] {dt_str} 저장 완료")
     finally:
         stg_conn.close()
 
 
-def transform(date_str: str):
-    """staging Transform 실행"""
-    transform_electricity(date_str)
-    transform_weather(date_str)
+def transform(dt_str: str):
+    transform_electricity(dt_str)
+    transform_weather(dt_str)
 
 
 if __name__ == "__main__":
-    transform("2023-01-02")
+    from datetime import datetime
+    dt_str = datetime.now().replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+    transform(dt_str)

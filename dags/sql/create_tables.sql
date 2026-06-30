@@ -2,13 +2,13 @@
 -- RAW 레이어: API 응답 원본 그대로 저장
 -- =============================================
 
--- 전력: 1행 = 1일 (API 응답 그대로, JSON 보존)
+-- 전력: 1행 = 5분 실시간 1건 (정시로 반올림해서 저장)
 CREATE TABLE IF NOT EXISTS etl_raw.electricity (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    date         DATE      NOT NULL,
+    observed_at  DATETIME  NOT NULL,
     raw_json     JSON      NOT NULL,
-    UNIQUE KEY uq_date (date)
+    UNIQUE KEY uq_observed (observed_at)
 );
 
 -- 날씨: 1행 = 1시간 (API 응답 주요 필드 + JSON 보존)

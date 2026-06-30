@@ -17,35 +17,39 @@ default_args = {
 with DAG(
     dag_id="power_weather_etl",
     default_args=default_args,
-    start_date=datetime(2023, 1, 1),
-    end_date=datetime(2023, 12, 31),
-    schedule_interval="@daily",
-    catchup=False,  # True로 바꾸면 2023년 전체 자동 처리
+    start_date=datetime(2026, 6, 30, 1, 0),  # 키 활성화 이후 시점으로 조정
+    schedule_interval="@hourly",
+    catchup=False,
     tags=["etl", "power", "weather"],
 ) as dag:
 
-    def _extract_electricity(**ctx):
-        extract_electricity(ctx["ds"])
+    def _get_dt_str(ctx) -> str:
+        """Airflow 실행 시각을 "YYYY-MM-DD HH:00:00" 형식으로 반환"""
+        return ctx["data_interval_start"].replace(minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _extract_electricity(**_):
+        # KPX 실시간 API — 항상 현재 수급 데이터를 가져옴
+        extract_electricity()
 
     def _extract_weather(**ctx):
-        extract_weather(ctx["ds"])
+        extract_weather(_get_dt_str(ctx))
 
     def _validate_raw(**ctx):
-        if not validate_raw(ctx["ds"]):
-            raise ValueError(f"품질 검증 1 실패: {ctx['ds']}")
+        if not validate_raw(_get_dt_str(ctx)):
+            raise ValueError(f"품질 검증 1 실패: {_get_dt_str(ctx)}")
 
     def _transform_electricity(**ctx):
-        transform_electricity(ctx["ds"])
+        transform_electricity(_get_dt_str(ctx))
 
     def _transform_weather(**ctx):
-        transform_weather(ctx["ds"])
+        transform_weather(_get_dt_str(ctx))
 
     def _validate_staging(**ctx):
-        if not validate_staging(ctx["ds"]):
-            raise ValueError(f"품질 검증 2 실패: {ctx['ds']}")
+        if not validate_staging(_get_dt_str(ctx)):
+            raise ValueError(f"품질 검증 2 실패: {_get_dt_str(ctx)}")
 
     def _load_mart(**ctx):
-        load_mart(ctx["ds"])
+        load_mart(_get_dt_str(ctx))
 
     # 태스크 정의
     t_ext_elec    = PythonOperator(task_id="extract_electricity",    python_callable=_extract_electricity)

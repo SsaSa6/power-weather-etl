@@ -14,10 +14,10 @@ def get_conn(db):
     return pymysql.connect(database=db, **MYSQL_CONF)
 
 
-def load_mart(date_str: str):
+def load_mart(dt_str: str):
     """
-    staging.electricity + staging.weather → mart.hourly
-    dt 기준 INNER JOIN — 둘 다 있는 시각만 mart에 적재
+    staging.electricity + staging.weather → mart.hourly (시각 단위 1건)
+    dt_str: "YYYY-MM-DD HH:00:00"
     """
     sql_join = """
         SELECT
@@ -29,20 +29,19 @@ def load_mart(date_str: str):
             w.precipitation
         FROM etl_staging.electricity e
         INNER JOIN etl_staging.weather w ON e.dt = w.dt
-        WHERE DATE(e.dt) = %s
-        ORDER BY e.dt
+        WHERE e.dt = %s
     """
 
     stg_conn = get_conn("etl_staging")
     try:
         with stg_conn.cursor() as cur:
-            cur.execute(sql_join, (date_str,))
-            rows = cur.fetchall()
+            cur.execute(sql_join, (dt_str,))
+            row = cur.fetchone()
     finally:
         stg_conn.close()
 
-    if not rows:
-        print(f"[load_mart] {date_str} JOIN 결과 없음")
+    if not row:
+        print(f"[load_mart] {dt_str} JOIN 결과 없음")
         return
 
     mart_conn = get_conn("etl_mart")
@@ -59,12 +58,14 @@ def load_mart(date_str: str):
                     wind_speed    = VALUES(wind_speed),
                     precipitation = VALUES(precipitation)
             """
-            cur.executemany(sql_insert, rows)
+            cur.execute(sql_insert, row)
         mart_conn.commit()
-        print(f"[load_mart] {date_str} {len(rows)}건 mart 적재 완료")
+        print(f"[load_mart] {dt_str} mart 적재 완료")
     finally:
         mart_conn.close()
 
 
 if __name__ == "__main__":
-    load_mart("2023-01-02")
+    from datetime import datetime
+    dt_str = datetime.now().replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+    load_mart(dt_str)
