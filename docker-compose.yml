@@ -19,5 +19,24 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+pymysql://root:kimgangmin7259@database:3306/whether_etl
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
     command: airflow db init
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - airflow-init
+    command: airflow scheduler
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+pymysql://root:kimgangmin7259@database:3306/whether_etl
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - airflow-init
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+pymysql://root:kimgangmin7259@database:3306/whether_etl
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    
       
 
