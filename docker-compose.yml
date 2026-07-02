@@ -11,4 +11,13 @@ services:
     environment: 
       MYSQL_ROOT_PASSWORD: "kimgangmin7259"
       MYSQL_DATABASE: "whether_etl"
+  airflow-init:
+    image: apache/airflow:2.9.3
+    depends_on:
+      - database
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+pymysql://root:kimgangmin7259@database:3306/whether_etl
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    command: airflow db init
+      
 
